@@ -95,9 +95,9 @@ class TruckSchedulingModel:
         
         # Definir tipos de camiones y su disponibilidad
         self.tipos_camiones = {
-            'Tipo1': 50,  # 50 camiones tipo 1
-            'Tipo2': 50,  # 50 camiones tipo 2
-            'Tipo3': 50   # 50 camiones tipo 3
+            'Tipo1': 20,  # 50 camiones tipo 1
+            'Tipo2': 20,  # 50 camiones tipo 2
+            'Tipo3': 20   # 50 camiones tipo 3
         }
         
         # Generar pedidos de prueba
@@ -113,7 +113,7 @@ class TruckSchedulingModel:
             tipos_disponibles.extend([tipo] * cantidad)
         
         # Generar pedidos
-        num_pedidos = 50
+        num_pedidos = 20
         random.seed(42)
         
         # Calcular la cantidad de pedidos con grados de libertad random y fijos
