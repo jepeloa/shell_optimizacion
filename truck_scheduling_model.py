@@ -387,6 +387,7 @@ class TruckSchedulingModel:
             print("\nModelo creado exitosamente con todas las correcciones")
             print(f"Número de variables: {len(self.model.variables())}")
             print(f"Número de restricciones: {len(self.model.constraints)}")
+            
 
     def resolver(self):
         """
