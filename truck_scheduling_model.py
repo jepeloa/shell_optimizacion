@@ -20,6 +20,8 @@ class TruckSchedulingModel:
         self.tiempos = {}
         self.model = None
         self.debug = True
+        self.num_pedidos = None
+
 
     def cargar_tiempos(self, ruta_con_vuelta: str, ruta_sin_vuelta: str):
         """
@@ -83,7 +85,7 @@ class TruckSchedulingModel:
         return self.tiempos
 
     def generar_datos_prueba(self, porcentaje_grados_libertad_random=25, fixed_grados_libertad=1,
-                             porcentaje_franja_random=25, fixed_franja='FH_1'):
+                             porcentaje_franja_random=25, fixed_franja='FH_1', num_pedidos=20):
         """
         Genera datos de prueba usando los tiempos reales cargados,
         con la posibilidad de configurar grados de libertad y franja horaria inicial.
@@ -111,7 +113,7 @@ class TruckSchedulingModel:
             tipos_disponibles.extend([tipo] * cantidad)
         
         # Generar pedidos
-        num_pedidos = 20
+        
         random.seed(42)
         
         # Calcular la cantidad de pedidos con grados de libertad random y fijos

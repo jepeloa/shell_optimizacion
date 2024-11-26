@@ -38,6 +38,14 @@ if st.sidebar.button("Cargar Tiempos"):
 # Parámetros para generar pedidos
 st.sidebar.header("Parámetros para Generar Pedidos")
 
+# Menú desplegable de números del 5 al 50
+valor_seleccionado = st.sidebar.selectbox(
+    "Seleccionar un número entero (5-50)",
+    options=list(range(5, 51)),
+    index=0
+)
+
+
 porcentaje_grados_libertad_random = st.sidebar.number_input(
     "Porcentaje de grados de libertad aleatorios (%)", min_value=0, max_value=100, value=25
 )
@@ -62,7 +70,8 @@ if st.sidebar.button("Generar Pedidos"):
                 porcentaje_grados_libertad_random=porcentaje_grados_libertad_random,
                 fixed_grados_libertad=fixed_grados_libertad,
                 porcentaje_franja_random=porcentaje_franja_random,
-                fixed_franja=fixed_franja
+                fixed_franja=fixed_franja,
+                num_pedidos=valor_seleccionado
             )
             st.session_state.pedidos_generados = True
             st.success("Pedidos generados correctamente")
