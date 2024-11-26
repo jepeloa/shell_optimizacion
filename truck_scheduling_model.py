@@ -95,9 +95,7 @@ class TruckSchedulingModel:
         
         # Definir tipos de camiones y su disponibilidad
         self.tipos_camiones = {
-            'Tipo1': 20,  # 50 camiones tipo 1
-            'Tipo2': 20,  # 50 camiones tipo 2
-            'Tipo3': 20   # 50 camiones tipo 3
+            'Tipo1': 80,  # 20 camiones tipo 1
         }
         
         # Generar pedidos de prueba
@@ -149,6 +147,8 @@ class TruckSchedulingModel:
             
             # Asignar tipo de camión de manera más uniforme
             tipo_camion = random.choice(tipos_disponibles)
+            tipos_disponibles.remove(tipo_camion)  # Evita reutilización inmediata
+            tipos_disponibles.append(tipo_camion)  # Reincorpora para mantener balance
             
             # Asignar grados de libertad
             if i in indices_random_gl:
@@ -254,16 +254,9 @@ class TruckSchedulingModel:
         # Variables de decisión
         x = {}          # Variable binaria para asignación de pedido a camión y franja
         y = {}          # Variable binaria para asignación de pedido a camión
-        u = {}          # Variable binaria para indicar si un camión está en uso
-        s = {}          # Variable binaria para el turno asignado al camión
         tiempo_inicio = {}  # Tiempo de inicio del pedido
         tiempo_fin = {}     # Tiempo de fin del pedido
         duracion = {}       # Duración efectiva del viaje (variable auxiliar)
-        
-        # Crear variables para camiones
-        for t, n in camiones:
-            u[t, n] = LpVariable(f"u_{t}_{n}", 0, 1, LpBinary)  # Indica si el camión está en uso
-            s[t, n] = LpVariable(f"s_{t}_{n}", 0, 1, LpBinary)  # Indica el turno asignado al camión
         
         # Crear variables para pedidos y asignaciones
         for p in pedidos:
@@ -306,8 +299,12 @@ class TruckSchedulingModel:
                             lowBound=0
                         )
         
+        # Nuevas variables para la simetría en franjas
+        max_orders = LpVariable("max_orders", 0, None, LpInteger)
+        min_orders = LpVariable("min_orders", 0, None, LpInteger)
+        
         # Restricciones
-    
+        
         # 1. Restricción de asignación única por pedido
         for p in pedidos:
             tipo_requerido = self.pedidos.loc[self.pedidos['id_pedido'] == p, 'tipo_camion'].iloc[0]
@@ -328,35 +325,12 @@ class TruckSchedulingModel:
                     self.model += lpSum(x[p, t, n, f] for f in franjas if (p, t, n, f) in x) == y[p, t, n], \
                                 f"Link_{p}_{t}_{n}"
         
-        # 2. Restricción de uso de camiones y asignación de turno
-        for t, n in camiones:
-            # Si el camión está asignado a al menos un pedido, entonces está en uso
-            self.model += u[t, n] >= lpSum(y[p, t, n] for p in pedidos if (p, t, n) in y), f"TruckUsage_{t}_{n}"
-            # Si el camión no está en uso, no se le asigna turno
-            self.model += s[t, n] <= u[t, n], f"ConsistenciaTurno_{t}_{n}"
+        # 2. Restricciones para simetría en franjas horarias
+        for f in franjas:
+            self.model += lpSum(x[p, t, n, f] for p in pedidos for t, n in camiones if (p, t, n, f) in x) <= max_orders, f"MaxOrders_{f}"
+            self.model += lpSum(x[p, t, n, f] for p in pedidos for t, n in camiones if (p, t, n, f) in x) >= min_orders, f"MinOrders_{f}"
         
-        # 3. Restricción de turnos de trabajo
-        for t, n in camiones:
-            for p in pedidos:
-                if (p, t, n) in y:
-                    for f in franjas:
-                        if (p, t, n, f) in x:
-                            # Si f es FH1 o FH2, x <= 1 - s[t, n] (Turno 1)
-                            if f in ['FH_1', 'FH_2']:
-                                self.model += x[p, t, n, f] <= 1 - s[t, n], f"Turno1_{p}_{t}_{n}_{f}"
-                            # Si f es FH3 o FH4, x <= s[t, n] (Turno 2)
-                            elif f in ['FH_3', 'FH_4']:
-                                self.model += x[p, t, n, f] <= s[t, n], f"Turno2_{p}_{t}_{n}_{f}"
-        
-        # 4. Restricción de límite de horas de trabajo por camión (máximo 720 minutos = 12 horas)
-        for t, n in camiones:
-            total_tiempo_trabajo = lpSum(
-                duracion[p, t, n, f]
-                for p in pedidos for f in franjas if (p, t, n, f) in duracion
-            )
-            self.model += total_tiempo_trabajo <= 720 * u[t, n], f"MaxHours_{t}_{n}"
-        
-        # 5. Restricción de llegada dentro de la franja horaria
+        # 3. Restricción de llegada dentro de la franja horaria
         for p, t, n, f in x:
             cliente = self.pedidos.loc[self.pedidos['id_pedido'] == p, 'cliente'].iloc[0]
             tiempo_entrega = self.tiempos[cliente][f]['tiempo_entrega']
@@ -368,7 +342,7 @@ class TruckSchedulingModel:
             self.model += llegada_cliente >= a_f * x[p, t, n, f], f"LlegadaMin_{p}_{t}_{n}_{f}"
             self.model += llegada_cliente <= b_f + (1 - x[p, t, n, f]) * 1e6, f"LlegadaMax_{p}_{t}_{n}_{f}"
         
-        # 6. Restricción de duración del viaje (tiempo total con vuelta)
+        # 4. Restricción de duración del viaje (tiempo total con vuelta)
         for p, t, n, f in x:
             cliente = self.pedidos.loc[self.pedidos['id_pedido'] == p, 'cliente'].iloc[0]
             tiempo_total = self.tiempos[cliente][f]['tiempo_total']
@@ -385,7 +359,7 @@ class TruckSchedulingModel:
             self.model += duracion[p, t, n, f] >= 0, f"DuracionPos_{p}_{t}_{n}_{f}"
             self.model += duracion[p, t, n, f] <= M * x[p, t, n, f], f"DuracionZero_{p}_{t}_{n}_{f}"
         
-        # 7. Restricción de no solapamiento considerando tiempo total con vuelta
+        # 5. Restricción de no solapamiento considerando tiempo total con vuelta
         M = 1e6  # Constante grande para Big-M
         for t, n in camiones:
             pedidos_camion = [p for p in pedidos if (p, t, n) in y]
@@ -404,9 +378,9 @@ class TruckSchedulingModel:
                                 self.model += tiempo_inicio[p1, t, n, f1] >= tiempo_fin[p2, t, n, f2] + delta - \
                                     M * (z + 2 - x[p1, t, n, f1] - x[p2, t, n, f2]), f"NoOverlap2_{p1}_{p2}_{t}_{n}_{f1}_{f2}"
         
-        # 8. Función objetivo: minimizar la cantidad de camiones utilizados
-        self.model += lpSum(u[t, n] for t, n in camiones), "MinimizeTrucksUsed"
-        
+        # 6. Función objetivo: minimizar la diferencia entre max_orders y min_orders para simetría
+        self.model += max_orders - min_orders, "MinimizeSymmetryInFranja"
+
         if self.debug:
             print("\nModelo creado exitosamente con todas las correcciones")
             print(f"Número de variables: {len(self.model.variables())}")
@@ -427,7 +401,7 @@ class TruckSchedulingModel:
         if status == "Optimal":
             print("Se encontró una solución óptima")
             valor_objetivo = value(self.model.objective)
-            print(f"Valor de la función objetivo: {valor_objetivo:.2f}")
+            print(f"Valor de la función objetivo (max_orders - min_orders): {valor_objetivo}")
         elif status == "Infeasible":
             print("El modelo es infactible - No se encontró solución válida")
         else:
@@ -521,7 +495,7 @@ class TruckSchedulingModel:
         schedule_viz['Tiempo_Fin_Datetime'] = pd.to_datetime(schedule_viz['Tiempo_Fin_Horas'], unit='h', origin=pd.Timestamp('today'))
     
         # Crear identificador único para cada camión
-        schedule_viz['Camion_ID'] = schedule_viz['Tipo_Camion'] + '_' + schedule_viz['Num_Camion']
+        schedule_viz['Camion_ID'] = schedule_viz['Tipo_Camion'] + '_' + schedule_viz['Num_Camion'].astype(str)
     
         # Colores únicos para cada pedido
         pedidos_unicos = schedule_viz['Pedido'].unique()
