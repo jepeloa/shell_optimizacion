@@ -102,7 +102,8 @@ with tab1:
                 if truck_model.resolver():
                     if truck_model.procesar_resultados():
                         st.success("Cálculo completado con éxito")
-
+                        st.success("Postprocesando pedidos")
+                       
                         # Mostrar tabla de asignaciones
                         st.write("### Tabla de Asignaciones")
                         st.dataframe(truck_model.schedule)

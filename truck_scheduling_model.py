@@ -414,7 +414,8 @@ class TruckSchedulingModel:
 
     def procesar_resultados(self):
         """
-        Procesa los resultados del modelo
+        Procesa los resultados del modelo y optimiza las asignaciones eliminando filas en blanco,
+        y luego intenta agrupar viajes contiguos en cada franja para reducir aún más el número de camiones.
         """
         if not self.model or LpStatus[self.model.status] != "Optimal":
             print("No hay resultados óptimos para procesar")
@@ -453,14 +454,14 @@ class TruckSchedulingModel:
                                 'Pedido': p,
                                 'Cliente': cliente,
                                 'Tipo_Camion': t,
-                                'Num_Camion': n,
+                                'Num_Camion': int(n),  # Convertir a entero
                                 'Franja': f,
                                 'Tiempo_Inicio': tiempo_inicio_val,
                                 'Tiempo_Fin': tiempo_fin_val,
                                 'Tiempo_Entrega': self.tiempos[cliente][f]['tiempo_entrega'],
                                 'Tiempo_Total': self.tiempos[cliente][f]['tiempo_total']
                             })
-                    
+                        
                 except Exception as e:
                     print(f"Error procesando variable {var.name}: {str(e)}")
                     continue
@@ -471,10 +472,70 @@ class TruckSchedulingModel:
         
         # Crear DataFrame con resultados
         self.schedule = pd.DataFrame(resultados)
-        self.schedule.sort_values(['Tipo_Camion', 'Num_Camion', 'Tiempo_Inicio'], 
-                                  inplace=True)
+        self.schedule.sort_values(['Franja', 'Tiempo_Inicio'], inplace=True)
         
-        print("\nResumen de asignaciones:")
+        # Optimización postprocesamiento: Eliminación de filas en blanco y reestructuración inicial
+        print("\nOptimización postprocesamiento: Eliminando filas en blanco y reestructurando asignaciones...")
+        
+        # Primero, eliminar filas en blanco y reasignar números de camión por franja
+        nuevas_asignaciones = []
+        for franja in ['FH_1', 'FH_2', 'FH_3', 'FH_4']:
+            asignaciones_franja = self.schedule[self.schedule['Franja'] == franja]
+            asignaciones_franja = asignaciones_franja.reset_index(drop=True)
+            
+            if not asignaciones_franja.empty:
+                # Reasignar los números de camión para esta franja
+                asignaciones_franja['Num_Camion'] = asignaciones_franja.index  # Reasignar camiones consecutivamente
+                nuevas_asignaciones.append(asignaciones_franja)
+        
+        # Concatenar todas las nuevas asignaciones
+        if nuevas_asignaciones:
+            self.schedule = pd.concat(nuevas_asignaciones, ignore_index=True)
+            self.schedule.sort_values(['Franja', 'Tiempo_Inicio'], inplace=True)
+        
+        # Ahora, intentar agrupar viajes contiguos en cada franja para reducir el número de camiones
+        print("\nAgrupando viajes contiguos en cada franja para optimizar el uso de camiones...")
+        
+        nuevas_asignaciones = []
+        for franja in ['FH_1', 'FH_2', 'FH_3', 'FH_4']:
+            asignaciones_franja = self.schedule[self.schedule['Franja'] == franja]
+            if asignaciones_franja.empty:
+                continue
+            
+            # Ordenar los viajes por tiempo de inicio
+            asignaciones_franja = asignaciones_franja.sort_values('Tiempo_Inicio').reset_index(drop=True)
+            
+            # Inicializar lista de camiones para esta franja
+            camiones_franja = []
+            
+            for idx, viaje in asignaciones_franja.iterrows():
+                asignado = False
+                # Intentar asignar el viaje a un camión existente
+                for camion in camiones_franja:
+                    ultimo_viaje = camion['viajes'][-1]
+                    # Si el viaje no se solapa con el último viaje del camión
+                    if viaje['Tiempo_Inicio'] >= ultimo_viaje['Tiempo_Fin']:
+                        # Asignar al camión
+                        camion['viajes'].append(viaje)
+                        asignado = True
+                        break
+                if not asignado:
+                    # Crear un nuevo camión
+                    nuevo_camion = {'viajes': [viaje]}
+                    camiones_franja.append(nuevo_camion)
+            
+            # Reasignar números de camión
+            for num_camion, camion in enumerate(camiones_franja):
+                for viaje in camion['viajes']:
+                    viaje['Num_Camion'] = num_camion
+                    nuevas_asignaciones.append(viaje)
+        
+        # Actualizar el schedule con las nuevas asignaciones
+        if nuevas_asignaciones:
+            self.schedule = pd.DataFrame(nuevas_asignaciones)
+            self.schedule.sort_values(['Franja', 'Num_Camion', 'Tiempo_Inicio'], inplace=True)
+        
+        print("\nAsignaciones optimizadas:")
         print(self.schedule.to_string())
         return True
 
@@ -567,14 +628,6 @@ class TruckSchedulingModel:
                 xanchor='center'
             )
     
-        # 2. Gráfico de utilización por tipo de camión
-        utilizacion = schedule_viz.groupby('Tipo_Camion')['Tiempo_Total_Horas'].sum().reset_index()
-        fig_util = px.bar(utilizacion, x='Tipo_Camion', y='Tiempo_Total_Horas',
-                          title='Utilización por Tipo de Camión',
-                          labels={'Tiempo_Total_Horas': 'Horas totales', 'Tipo_Camion': 'Tipo de Camión'})
-    
-        fig_util.add_hline(y=12, line_dash="dash", line_color="red", annotation_text="Límite (12h)")
-    
         # Retornar las figuras
-        figures = [fig_gantt, fig_util]
+        figures = [fig_gantt]
         return figures
