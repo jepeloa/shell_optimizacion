@@ -1,6 +1,9 @@
 import pandas as pd
 import numpy as np
 from pulp import *
+from pulp import PULP_CBC_CMD
+
+
 import plotly.express as px
 import plotly.graph_objects as go
 import random
@@ -21,6 +24,7 @@ class TruckSchedulingModel:
         self.model = None
         self.debug = True
         self.num_pedidos = None
+        
 
 
     def cargar_tiempos(self, ruta_con_vuelta: str, ruta_sin_vuelta: str):
@@ -304,7 +308,7 @@ class TruckSchedulingModel:
         # Nuevas variables para la simetría en franjas
         max_orders = LpVariable("max_orders", 0, None, LpInteger)
         min_orders = LpVariable("min_orders", 0, None, LpInteger)
-        
+        M = 2000
         # Restricciones
         
         # 1. Restricción de asignación única por pedido
@@ -342,7 +346,7 @@ class TruckSchedulingModel:
             llegada_cliente = tiempo_inicio[p, t, n, f] + tiempo_entrega
             
             self.model += llegada_cliente >= a_f * x[p, t, n, f], f"LlegadaMin_{p}_{t}_{n}_{f}"
-            self.model += llegada_cliente <= b_f + (1 - x[p, t, n, f]) * 1e6, f"LlegadaMax_{p}_{t}_{n}_{f}"
+            self.model += llegada_cliente <= b_f + (1 - x[p, t, n, f]) * M, f"LlegadaMax_{p}_{t}_{n}_{f}"
         
         # 4. Restricción de duración del viaje (tiempo total con vuelta)
         for p, t, n, f in x:
@@ -353,7 +357,6 @@ class TruckSchedulingModel:
                         f"Duracion_{p}_{t}_{n}_{f}"
             
             # Definir la variable auxiliar duracion[p, t, n, f]
-            M = 1e6  # Constante grande para Big-M
             self.model += duracion[p, t, n, f] >= tiempo_fin[p, t, n, f] - tiempo_inicio[p, t, n, f] - M * (1 - x[p, t, n, f]), \
                         f"DuracionMin_{p}_{t}_{n}_{f}"
             self.model += duracion[p, t, n, f] <= tiempo_fin[p, t, n, f] - tiempo_inicio[p, t, n, f] + M * (1 - x[p, t, n, f]), \
@@ -362,7 +365,6 @@ class TruckSchedulingModel:
             self.model += duracion[p, t, n, f] <= M * x[p, t, n, f], f"DuracionZero_{p}_{t}_{n}_{f}"
         
         # 5. Restricción de no solapamiento considerando tiempo total con vuelta
-        M = 1e6  # Constante grande para Big-M
         for t, n in camiones:
             pedidos_camion = [p for p in pedidos if (p, t, n) in y]
             for i, p1 in enumerate(pedidos_camion):
@@ -396,7 +398,8 @@ class TruckSchedulingModel:
         print("\nResolviendo el modelo...")
         
         # Configurar y resolver
-        self.solver = self.model.solve()
+        cbc_solver = PULP_CBC_CMD(msg=True, gapAbs=1)
+        self.solver = self.model.solve(cbc_solver)
         status = LpStatus[self.model.status]
         
         print(f"Estado del solver: {status}")

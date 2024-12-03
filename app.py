@@ -111,27 +111,27 @@ if st.sidebar.button("Calcular"):
                     st.write("### Tabla de Asignaciones")
                     st.dataframe(truck_model.schedule)
                     print(truck_model.schedule)
-                    matrix=matrix_processor.generar_matriz_ordenes(truck_model.schedule)
-                    st.write(matrix)
-                    #matrix=matrix_processor.generate_matrix_from_orders([4,5,6,7])
+                    #matrix=matrix_processor.generar_matriz_ordenes(truck_model.schedule)
+                    #st.write(matrix)
                     
-                    elements=matrix_processor.get_elements(matrix)
-                    possible_pairs = matrix_processor.find_possible_pairs(elements, 4)
-                    G = matrix_processor.build_graph(possible_pairs)
-                    matching = matrix_processor.find_max_matching(G)
-                    groups = matrix_processor.get_groups_info(matching)
-                    print("--- Grupos Seleccionados ---")
-                    if groups:
-                        for idx, group in enumerate(groups, start=1):
-                            el1, el2 = group
-                            print(f"Grupo {idx}: Elemento en Fila {el1[0]}, Columna {el1[1]} y Fila {el2[0]}, Columna {el2[1]}")
-                    else:
-                        print("No se seleccionaron grupos.")
-                        print("\n")
-                    matrix_processor.plot_matrix_with_plotly(matrix, groups=groups, title="Grupos Seleccionados en la Matriz Generada")
+                    
+                    #elements=matrix_processor.get_elements(matrix)
+                    #possible_pairs = matrix_processor.find_possible_pairs(elements, 4)
+                    #G = matrix_processor.build_graph(possible_pairs)
+                    #matching = matrix_processor.find_max_matching(G)
+                    #groups = matrix_processor.get_groups_info(matching)
+                    # print("--- Grupos Seleccionados ---")
+                    # if groups:
+                    #     for idx, group in enumerate(groups, start=1):
+                    #         el1, el2 = group
+                    #         print(f"Grupo {idx}: Elemento en Fila {el1[0]}, Columna {el1[1]} y Fila {el2[0]}, Columna {el2[1]}")
+                    # else:
+                    #     print("No se seleccionaron grupos.")
+                    #     print("\n")
+                    # matrix_processor.plot_matrix_with_plotly(matrix, groups=groups, title="Grupos Seleccionados en la Matriz Generada")
     
                     
-                    st.write(elements)
+                    #st.write(elements)
                     #matrix_processor.get_elements()
                     
                     # Estadísticas generales
