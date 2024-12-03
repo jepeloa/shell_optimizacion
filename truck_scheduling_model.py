@@ -559,7 +559,7 @@ class TruckSchedulingModel:
         schedule_viz['Tiempo_Fin_Datetime'] = pd.to_datetime(schedule_viz['Tiempo_Fin_Horas'], unit='h', origin=pd.Timestamp('today'))
     
         # Crear identificador único para cada camión
-        schedule_viz['Camion_ID'] = schedule_viz['Tipo_Camion'] + '_' + schedule_viz['Num_Camion'].astype(str)
+        schedule_viz['Camion_ID'] ='ID00' + schedule_viz['Num_Camion'].astype(str)
     
         # Colores únicos para cada pedido
         pedidos_unicos = schedule_viz['Pedido'].unique()
