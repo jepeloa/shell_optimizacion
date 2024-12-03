@@ -28,7 +28,7 @@ st.title("Schedulling Camiones")
 
 
 st.header("Programación de Camiones")
-st.sidebar.image("./shell_logo.png", use_column_width=True)
+st.sidebar.image("./shell_logo.png", use_container_width=True)
 # Sidebar para cargar archivos
 st.sidebar.header("Cargar Archivos Excel")
 ruta_con_vuelta = st.sidebar.file_uploader("Subir archivo de tiempos con vuelta", type=["xlsx"])
