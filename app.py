@@ -26,8 +26,6 @@ st.title("Schedulling Camiones")
 # Crear una pestaña para cada funcionalidad
 
 
-
-st.header("Programación de Camiones")
 st.sidebar.image("./shell_logo.png", use_container_width=True)
 # Sidebar para cargar archivos
 st.sidebar.header("Cargar Archivos Excel")
