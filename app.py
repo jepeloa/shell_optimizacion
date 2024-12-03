@@ -21,14 +21,14 @@ truck_model = st.session_state.truck_model
 matrix_processor=st.session_state.matrix_processor
 
 # Título de la aplicación
-st.title("Programación de Camiones y Balanceo de Matrices")
+st.title("Schedulling Camiones")
 
 # Crear una pestaña para cada funcionalidad
 
 
 
 st.header("Programación de Camiones")
-
+st.sidebar.image("./shell_logo.png", use_column_width=True)
 # Sidebar para cargar archivos
 st.sidebar.header("Cargar Archivos Excel")
 ruta_con_vuelta = st.sidebar.file_uploader("Subir archivo de tiempos con vuelta", type=["xlsx"])
