@@ -21,7 +21,7 @@ truck_model = st.session_state.truck_model
 matrix_processor=st.session_state.matrix_processor
 
 # Título de la aplicación
-st.title("Schedulling Camiones")
+st.title("Scheduling Camiones")
 
 # Crear una pestaña para cada funcionalidad
 
