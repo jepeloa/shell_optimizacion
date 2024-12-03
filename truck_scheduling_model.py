@@ -101,7 +101,7 @@ class TruckSchedulingModel:
         
         # Definir tipos de camiones y su disponibilidad
         self.tipos_camiones = {
-            'Tipo1': 80,  # 20 camiones tipo 1
+            'Tipo1': num_pedidos,  # 20 camiones tipo 1
         }
         
         # Generar pedidos de prueba
