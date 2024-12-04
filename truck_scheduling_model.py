@@ -407,7 +407,7 @@ class TruckSchedulingModel:
         
         # Configurar y resolver
         #cbc_solver = PULP_CBC_CMD(msg=True, gapAbs=1)
-        cbc_solver = PULP_CBC_CMD(msg=True, timeLimit=300, threads=4)
+        cbc_solver = PULP_CBC_CMD(msg=True, timeLimit=3600, threads=4)
         self.solver = self.model.solve(cbc_solver)
         status = LpStatus[self.model.status]
         
