@@ -381,7 +381,15 @@ class TruckSchedulingModel:
                                 # Pedido p2 antes de p1
                                 self.model += tiempo_inicio[p1, t, n, f1] >= tiempo_fin[p2, t, n, f2] + delta - \
                                     M * (z + 2 - x[p1, t, n, f1] - x[p2, t, n, f2]), f"NoOverlap2_{p1}_{p2}_{t}_{n}_{f1}_{f2}"
-        
+        # 7. Restricción para que el tiempo de vuelta no exceda la franja horaria permitida
+        for p, t, n, f in x:
+            if f in ['FH_1', 'FH_2']:
+        # El tiempo de fin debe ser menor o igual a 720 (fin de FH_2)
+                self.model += tiempo_fin[p, t, n, f] <= 720 + M * (1 - x[p, t, n, f]), f"ReturnTimeLimit_{p}_{t}_{n}_{f}"
+            elif f in ['FH_3', 'FH_4']:
+                # El tiempo de fin debe ser menor o igual a 1439 (fin de FH_4)
+                self.model += tiempo_fin[p, t, n, f] <= 1439 + M * (1 - x[p, t, n, f]), f"ReturnTimeLimit_{p}_{t}_{n}_{f}"
+
         # 6. Función objetivo: minimizar la diferencia entre max_orders y min_orders para simetría
         self.model += max_orders - min_orders, "MinimizeSymmetryInFranja"
 
