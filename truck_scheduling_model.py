@@ -5,7 +5,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from ortools.linear_solver import pywraplp
 
-
 class TruckSchedulingModel:
     def __init__(self):
         """
@@ -23,8 +22,10 @@ class TruckSchedulingModel:
         self.debug = True
         self.num_pedidos = None
         
+        # Variables para guardar referencias a las variables del solver
         self.x = {}
         self.y = {}
+        self.unassigned = {}
         self.tiempo_inicio = {}
         self.tiempo_fin = {}
         self.duracion = {}
@@ -86,6 +87,10 @@ class TruckSchedulingModel:
 
     def generar_datos_prueba(self, porcentaje_grados_libertad_random=25, fixed_grados_libertad=1,
                              porcentaje_franja_random=25, fixed_franja='FH_1', num_pedidos=20):
+        """
+        Genera datos de prueba usando los tiempos reales cargados,
+        con la posibilidad de configurar grados de libertad y franja horaria inicial.
+        """
         if not self.tiempos:
             raise ValueError("Primero debe cargar los tiempos usando cargar_tiempos()")
         
@@ -212,9 +217,9 @@ class TruckSchedulingModel:
         
         # Habilitar salida detallada del solver
         self.solver.EnableOutput()  
-        # Podemos ajustar parámetros del solver si se desea más log interno:
+        # Puedes ajustar parámetros del solver si deseas más logs internos:
         # self.solver.SetSolverSpecificParametersAsString('log=1')
-
+        
         camiones = [(tipo, i) for tipo, num in self.tipos_camiones.items() 
                     for i in range(num)]
         pedidos = self.pedidos['id_pedido'].tolist()
@@ -251,27 +256,41 @@ class TruckSchedulingModel:
                         self.tiempo_inicio[(p, t, n, f)] = self.solver.NumVar(a_f, b_f, f"ti_{p}_{t}_{n}_{f}")
                         self.tiempo_fin[(p, t, n, f)] = self.solver.NumVar(a_f, b_f + 300, f"tf_{p}_{t}_{n}_{f}")
                         self.duracion[(p, t, n, f)] = self.solver.NumVar(0, M, f"dur_{p}_{t}_{n}_{f}")
-
+        
+        # Introducir variables de relajación para permitir pedidos no asignados
+        if self.debug:
+            print("Creando variables de relajación para pedidos no asignados...")
+        
+        for p in pedidos:
+            self.unassigned[p] = self.solver.BoolVar(f"unassigned_{p}")
+        
         self.max_orders_var = self.solver.IntVar(0, self.solver.infinity(), "max_orders")
         self.min_orders_var = self.solver.IntVar(0, self.solver.infinity(), "min_orders")
         
         if self.debug:
             print("Creando restricciones...")
-
+        
         # Restricciones
         for p in pedidos:
+            # Cada pedido debe ser asignado exactamente a un camión o ser no asignado
             self.solver.Add(
-                sum(self.y[(p, t, n)] for t, n in camiones if (p, t, n) in self.y) == 1
+                sum(self.y[(p, t, n)] for t, n in camiones if (p, t, n) in self.y) + self.unassigned[p] == 1
             )
+            
+            # La suma de todas las asignaciones de franjas debe ser igual a la asignación al camión
             self.solver.Add(
-                sum(self.x[(p, t, n, f)] for t, n in camiones for f in franjas if (p, t, n, f) in self.x) == 1
+                sum(self.x[(p, t, n, f)] for t, n in camiones for f in franjas if (p, t, n, f) in self.x) == 
+                sum(self.y[(p, t, n)] for t, n in camiones if (p, t, n) in self.y)
             )
+            
+            # Vincular y con x
             for t, n in camiones:
                 if (p, t, n) in self.y:
                     self.solver.Add(
                         sum(self.x[(p, t, n, f)] for f in franjas if (p, t, n, f) in self.x) == self.y[(p, t, n)]
                     )
-
+        
+        # Simetría en franjas
         for f in franjas:
             self.solver.Add(
                 sum(self.x[(p, t, n, f2)] for p in pedidos for t, n in camiones for f2 in [f] if (p, t, n, f2) in self.x)
@@ -281,24 +300,36 @@ class TruckSchedulingModel:
                 sum(self.x[(p, t, n, f2)] for p in pedidos for t, n in camiones for f2 in [f] if (p, t, n, f2) in self.x)
                 >= self.min_orders_var
             )
-
+        
+        # Restricciones de llegada dentro de la franja horaria
         for (p, t, n, f) in self.x.keys():
             cliente = self.pedidos.loc[self.pedidos['id_pedido'] == p, 'cliente'].iloc[0]
             tiempo_entrega = self.tiempos[cliente][f]['tiempo_entrega']
             a_f, b_f = franja_tiempo[f]
             llegada_cliente = self.solver.Sum([self.tiempo_inicio[(p, t, n, f)], tiempo_entrega])
+            # llegada_cliente >= a_f * x[p,t,n,f]
             self.solver.Add(llegada_cliente >= a_f * self.x[(p, t, n, f)])
+            # llegada_cliente <= b_f + (1 - x)*M
             self.solver.Add(llegada_cliente <= b_f + (1 - self.x[(p, t, n, f)]) * M)
-
+        
+        # Restricciones de duración del viaje
         for (p, t, n, f) in self.x.keys():
             cliente = self.pedidos.loc[self.pedidos['id_pedido'] == p, 'cliente'].iloc[0]
             tiempo_total = self.tiempos[cliente][f]['tiempo_total']
+            # tiempo_fin = tiempo_inicio + tiempo_total * x
             self.solver.Add(self.tiempo_fin[(p, t, n, f)] == self.solver.Sum([self.tiempo_inicio[(p, t, n, f)], tiempo_total * self.x[(p, t, n, f)]]))
-            self.solver.Add(self.duracion[(p, t, n, f)] >= self.tiempo_fin[(p, t, n, f)] - self.tiempo_inicio[(p, t, n, f)] - M*(1 - self.x[(p, t, n, f)]))
-            self.solver.Add(self.duracion[(p, t, n, f)] <= self.tiempo_fin[(p, t, n, f)] - self.tiempo_inicio[(p, t, n, f)] + M*(1 - self.x[(p, t, n, f)]))
+            # duracion >= tf - ti - M*(1 - x)
+            self.solver.Add(self.duracion[(p, t, n, f)] >= 
+                            self.tiempo_fin[(p, t, n, f)] - self.tiempo_inicio[(p, t, n, f)] - M*(1 - self.x[(p, t, n, f)]))
+            # duracion <= tf - ti + M*(1 - x)
+            self.solver.Add(self.duracion[(p, t, n, f)] <= 
+                            self.tiempo_fin[(p, t, n, f)] - self.tiempo_inicio[(p, t, n, f)] + M*(1 - self.x[(p, t, n, f)]))
+            # duracion >= 0
             self.solver.Add(self.duracion[(p, t, n, f)] >= 0)
-            self.solver.Add(self.duracion[(p, t, n, f)] <= M*self.x[(p, t, n, f)])
-
+            # duracion <= M * x
+            self.solver.Add(self.duracion[(p, t, n, f)] <= M * self.x[(p, t, n, f)])
+        
+        # Restricciones de no solapamiento de viajes en el mismo camión
         for t, n in camiones:
             pedidos_camion = [p for p in pedidos if (p, t, n) in self.y]
             for i, p1 in enumerate(pedidos_camion):
@@ -307,21 +338,37 @@ class TruckSchedulingModel:
                         for f2 in franjas:
                             if (p1, t, n, f1) in self.x and (p2, t, n, f2) in self.x:
                                 z = self.solver.BoolVar(f"z_{p1}_{p2}_{t}_{n}_{f1}_{f2}")
-                                self.solver.Add(self.tiempo_inicio[(p2, t, n, f2)] >= 
-                                                self.tiempo_fin[(p1, t, n, f1)] + delta - 
-                                                M*(1 - z + 2 - self.x[(p1, t, n, f1)] - self.x[(p2, t, n, f2)]))
-                                self.solver.Add(self.tiempo_inicio[(p1, t, n, f1)] >= 
-                                                self.tiempo_fin[(p2, t, n, f2)] + delta - 
-                                                M*(z + 2 - self.x[(p1, t, n, f1)] - self.x[(p2, t, n, f2)]))
-
+                                # Pedido p1 antes de p2
+                                self.solver.Add(
+                                    self.tiempo_inicio[(p2, t, n, f2)] >= 
+                                    self.tiempo_fin[(p1, t, n, f1)] + delta - 
+                                    M * (1 - z + 2 - self.x[(p1, t, n, f1)] - self.x[(p2, t, n, f2)])
+                                )
+                                # Pedido p2 antes de p1
+                                self.solver.Add(
+                                    self.tiempo_inicio[(p1, t, n, f1)] >= 
+                                    self.tiempo_fin[(p2, t, n, f2)] + delta - 
+                                    M * (z + 2 - self.x[(p1, t, n, f1)] - self.x[(p2, t, n, f2)])
+                                )
+        
+        # Restricciones para que el tiempo de vuelta no exceda la franja horaria permitida
         for (p, t, n, f) in self.x.keys():
             if f in ['FH_1', 'FH_2']:
-                self.solver.Add(self.tiempo_fin[(p, t, n, f)] <= 720 + M*(1 - self.x[(p, t, n, f)]))
-            else:
-                self.solver.Add(self.tiempo_fin[(p, t, n, f)] <= 1439 + M*(1 - self.x[(p, t, n, f)]))
-
-        self.solver.Minimize(self.solver.Sum([self.max_orders_var, -1*self.min_orders_var]))
-
+                # tiempo_fin <= 720 + M*(1 - x)
+                self.solver.Add(self.tiempo_fin[(p, t, n, f)] <= 720 + M * (1 - self.x[(p, t, n, f)]))
+            elif f in ['FH_3', 'FH_4']:
+                # tiempo_fin <= 1439 + M*(1 - x)
+                self.solver.Add(self.tiempo_fin[(p, t, n, f)] <= 1439 + M * (1 - self.x[(p, t, n, f)]))
+        
+        # Penalización por pedidos no asignados
+        penalty = 10000  # Puedes ajustar este valor según sea necesario
+        if self.debug:
+            print("Añadiendo penalización por pedidos no asignados a la función objetivo...")
+        
+        # Función objetivo: minimizar (max_orders - min_orders) + penalty * sum(unassigned)
+        self.solver.Minimize(self.solver.Sum([self.max_orders_var, -1 * self.min_orders_var]) + 
+                             penalty * self.solver.Sum([self.unassigned[p] for p in pedidos]))
+        
         if self.debug:
             print("Modelo creado exitosamente.")
             print(f"Número de variables: {self.solver.NumVariables()}")
@@ -334,7 +381,12 @@ class TruckSchedulingModel:
         if self.status == pywraplp.Solver.OPTIMAL:
             print("Se encontró una solución óptima")
             valor_objetivo = self.solver.Objective().Value()
-            print(f"Valor de la función objetivo (max_orders - min_orders): {valor_objetivo}")
+            print(f"Valor de la función objetivo (max_orders - min_orders + penalización): {valor_objetivo}")
+            return True
+        elif self.status == pywraplp.Solver.FEASIBLE:
+            print("Se encontró una solución factible, pero no óptima")
+            valor_objetivo = self.solver.Objective().Value()
+            print(f"Valor de la función objetivo (max_orders - min_orders + penalización): {valor_objetivo}")
             return True
         elif self.status == pywraplp.Solver.INFEASIBLE:
             print("El modelo es infactible - No se encontró solución válida")
@@ -344,8 +396,8 @@ class TruckSchedulingModel:
         return False
 
     def procesar_resultados(self):
-        if self.solver is None or self.status != pywraplp.Solver.OPTIMAL:
-            print("No hay resultados óptimos para procesar")
+        if self.solver is None or self.status not in [pywraplp.Solver.OPTIMAL, pywraplp.Solver.FEASIBLE]:
+            print("No hay resultados óptimos o factibles para procesar")
             return False
         
         print("\nProcesando resultados...")
@@ -371,7 +423,14 @@ class TruckSchedulingModel:
                     'Tiempo_Total': tiempo_total
                 })
         
-        if not resultados:
+        # Identificar pedidos no asignados
+        pedidos_no_asignados = [p for p in self.pedidos['id_pedido'] if self.unassigned[p].solution_value() > 0.5]
+        if pedidos_no_asignados:
+            print("\nPedidos no asignados debido a restricciones:")
+            for p in pedidos_no_asignados:
+                print(f"  {p}")
+        
+        if not resultados and not pedidos_no_asignados:
             print("No se encontraron asignaciones válidas")
             return False
         
@@ -390,7 +449,7 @@ class TruckSchedulingModel:
         if nuevas_asignaciones:
             self.schedule = pd.concat(nuevas_asignaciones, ignore_index=True)
             self.schedule.sort_values(['Franja', 'Tiempo_Inicio'], inplace=True)
-
+        
         print("\nAgrupando viajes contiguos en cada franja para optimizar el uso de camiones...")
         nuevas_asignaciones = []
         for franja in ['FH_1', 'FH_2', 'FH_3', 'FH_4']:
@@ -507,4 +566,3 @@ class TruckSchedulingModel:
     
         figures = [fig_gantt]
         return figures
-
