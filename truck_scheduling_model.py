@@ -23,7 +23,6 @@ class TruckSchedulingModel:
         self.debug = True
         self.num_pedidos = None
         
-        # Variables para guardar referencias a las variables del solver
         self.x = {}
         self.y = {}
         self.tiempo_inicio = {}
@@ -39,15 +38,12 @@ class TruckSchedulingModel:
         """
         print("Cargando tiempos del LUNES...")
         
-        # Cargar los dataframes
         self.tiempos_con_vuelta = pd.read_excel(ruta_con_vuelta)
         self.tiempos_sin_vuelta = pd.read_excel(ruta_sin_vuelta)
         
-        # Limpiar nombres de columnas
         for df in [self.tiempos_con_vuelta, self.tiempos_sin_vuelta]:
             df.columns = [col.strip().upper() for col in df.columns]
         
-        # Mapear las columnas del Excel específicamente para LUNES
         columnas_franjas = {
             'FH_1': 'LUNES FH_1',
             'FH_2': 'LUNES FH_2',
@@ -55,7 +51,6 @@ class TruckSchedulingModel:
             'FH_4': 'LUNES FH_4'
         }
         
-        # Crear diccionario de tiempos
         self.tiempos = {}
         for _, row in self.tiempos_con_vuelta.iterrows():
             cliente = str(row['N° DE CLIENTE'])
@@ -64,10 +59,7 @@ class TruckSchedulingModel:
             for fh in ['FH_1', 'FH_2', 'FH_3', 'FH_4']:
                 col = columnas_franjas[fh]
                 if col in row.index and not pd.isna(row[col]):
-                    # Obtener tiempo con vuelta
                     tiempo_con = float(row[col])
-                    
-                    # Obtener tiempo sin vuelta
                     tiempo_sin = float(self.tiempos_sin_vuelta.loc[
                         self.tiempos_sin_vuelta['N° DE CLIENTE'] == int(cliente), col
                     ].iloc[0])
@@ -78,7 +70,6 @@ class TruckSchedulingModel:
                             'tiempo_total': tiempo_con
                         }
                 else:
-                    # Usar valor predeterminado de 100 minutos
                     self.tiempos[cliente][fh] = {
                         'tiempo_entrega': 100.0,
                         'tiempo_total': 100.0
@@ -86,9 +77,8 @@ class TruckSchedulingModel:
         
         if self.debug:
             print(f"\nTiempos cargados para {len(self.tiempos)} clientes")
-            print("\nEjemplo de tiempos para el primer cliente:")
             primer_cliente = list(self.tiempos.keys())[0]
-            print(f"Cliente {primer_cliente}:")
+            print(f"Ejemplo de tiempos para cliente {primer_cliente}:")
             for fh, tiempos in self.tiempos[primer_cliente].items():
                 print(f"  {fh}: {tiempos}")
         
@@ -96,21 +86,15 @@ class TruckSchedulingModel:
 
     def generar_datos_prueba(self, porcentaje_grados_libertad_random=25, fixed_grados_libertad=1,
                              porcentaje_franja_random=25, fixed_franja='FH_1', num_pedidos=20):
-        """
-        Genera datos de prueba usando los tiempos reales cargados,
-        con la posibilidad de configurar grados de libertad y franja horaria inicial.
-        """
         if not self.tiempos:
             raise ValueError("Primero debe cargar los tiempos usando cargar_tiempos()")
         
         print("\nIniciando generación de datos de prueba...")
         
-        # Definir tipos de camiones y su disponibilidad
         self.tipos_camiones = {
             'Tipo1': num_pedidos,  
         }
         
-        # Generar pedidos de prueba
         pedidos_data = []
         clientes = list(self.tiempos.keys())
         
@@ -144,7 +128,6 @@ class TruckSchedulingModel:
             
             if self.debug:
                 print(f"\nGenerando pedido {i+1} para cliente {cliente}")
-                print(f"Franjas disponibles: {list(self.tiempos[cliente].keys())}")
             
             tipo_camion = random.choice(tipos_disponibles)
             tipos_disponibles.remove(tipo_camion)
@@ -188,9 +171,6 @@ class TruckSchedulingModel:
         return self.pedidos
 
     def verificar_datos(self):
-        """
-        Verifica la consistencia de los datos cargados
-        """
         print("\nVerificando datos...")
         
         if self.pedidos is None or self.pedidos.empty:
@@ -201,7 +181,6 @@ class TruckSchedulingModel:
             print("ERROR: No se han cargado los tiempos")
             return False
         
-        print("\nVerificando consistencia de pedidos:")
         for _, pedido in self.pedidos.iterrows():
             cliente = pedido['cliente']
             fh = pedido['FH_principal']
@@ -218,22 +197,24 @@ class TruckSchedulingModel:
         return True
 
     def crear_modelo(self):
-        """
-        Crea el modelo usando OR-tools con todas las restricciones y correcciones aplicadas.
-        """
         if not self.verificar_datos():
             raise ValueError("Los datos no son válidos para crear el modelo")
         
         if self.debug:
             print("\nCreando modelo de programación entera mixta con OR-tools...")
             print(f"Número de pedidos a programar: {len(self.pedidos)}")
-            print(f"Pedidos a programar: {self.pedidos['id_pedido'].tolist()}")
-            print(f"Camiones disponibles: {[(t, n) for t, num in self.tipos_camiones.items() for n in range(num)]}")
+            print("Pedidos a programar:", self.pedidos['id_pedido'].tolist())
+            print("Camiones disponibles:", [(t, n) for t, num in self.tipos_camiones.items() for n in range(num)])
         
         self.solver = pywraplp.Solver.CreateSolver('CBC')
         if not self.solver:
             raise ValueError("No se pudo crear el solver OR-tools")
         
+        # Habilitar salida detallada del solver
+        self.solver.EnableOutput()  
+        # Podemos ajustar parámetros del solver si se desea más log interno:
+        # self.solver.SetSolverSpecificParametersAsString('log=1')
+
         camiones = [(tipo, i) for tipo, num in self.tipos_camiones.items() 
                     for i in range(num)]
         pedidos = self.pedidos['id_pedido'].tolist()
@@ -248,6 +229,9 @@ class TruckSchedulingModel:
         
         delta = 0
         M = 2000
+        
+        if self.debug:
+            print("Creando variables...")
         
         for p in pedidos:
             row = self.pedidos[self.pedidos['id_pedido'] == p].iloc[0]
@@ -271,9 +255,11 @@ class TruckSchedulingModel:
         self.max_orders_var = self.solver.IntVar(0, self.solver.infinity(), "max_orders")
         self.min_orders_var = self.solver.IntVar(0, self.solver.infinity(), "min_orders")
         
+        if self.debug:
+            print("Creando restricciones...")
+
         # Restricciones
         for p in pedidos:
-            tipo_requerido = self.pedidos.loc[self.pedidos['id_pedido'] == p, 'tipo_camion'].iloc[0]
             self.solver.Add(
                 sum(self.y[(p, t, n)] for t, n in camiones if (p, t, n) in self.y) == 1
             )
@@ -322,9 +308,11 @@ class TruckSchedulingModel:
                             if (p1, t, n, f1) in self.x and (p2, t, n, f2) in self.x:
                                 z = self.solver.BoolVar(f"z_{p1}_{p2}_{t}_{n}_{f1}_{f2}")
                                 self.solver.Add(self.tiempo_inicio[(p2, t, n, f2)] >= 
-                                                self.solver.Sum([self.tiempo_fin[(p1, t, n, f1)], delta, -M*(1 - z + 2 - self.x[(p1, t, n, f1)] - self.x[(p2, t, n, f2)])]))
+                                                self.tiempo_fin[(p1, t, n, f1)] + delta - 
+                                                M*(1 - z + 2 - self.x[(p1, t, n, f1)] - self.x[(p2, t, n, f2)]))
                                 self.solver.Add(self.tiempo_inicio[(p1, t, n, f1)] >= 
-                                                self.solver.Sum([self.tiempo_fin[(p2, t, n, f2)], delta, -M*(z + 2 - self.x[(p1, t, n, f1)] - self.x[(p2, t, n, f2)])]))
+                                                self.tiempo_fin[(p2, t, n, f2)] + delta - 
+                                                M*(z + 2 - self.x[(p1, t, n, f1)] - self.x[(p2, t, n, f2)]))
 
         for (p, t, n, f) in self.x.keys():
             if f in ['FH_1', 'FH_2']:
@@ -336,11 +324,10 @@ class TruckSchedulingModel:
 
         if self.debug:
             print("Modelo creado exitosamente.")
+            print(f"Número de variables: {self.solver.NumVariables()}")
+            print(f"Número de restricciones: {self.solver.NumConstraints()}")
 
     def resolver(self):
-        """
-        Resuelve el modelo de programación lineal usando OR-tools
-        """
         print("\nResolviendo el modelo con OR-tools...")
         self.status = self.solver.Solve()
         
@@ -357,9 +344,6 @@ class TruckSchedulingModel:
         return False
 
     def procesar_resultados(self):
-        """
-        Procesa los resultados del modelo y optimiza las asignaciones.
-        """
         if self.solver is None or self.status != pywraplp.Solver.OPTIMAL:
             print("No hay resultados óptimos para procesar")
             return False
@@ -368,10 +352,10 @@ class TruckSchedulingModel:
         resultados = []
         
         for (p, t, n, f), var in self.x.items():
-            if var.solution_value() > 0.5:  # Reemplazar self.solver.Value(var) por var.solution_value()
+            if var.solution_value() > 0.5:
                 cliente = self.pedidos.loc[self.pedidos['id_pedido'] == p, 'cliente'].iloc[0]
-                ti = self.tiempo_inicio[(p, t, n, f)].solution_value()   # usar solution_value()
-                tf = self.tiempo_fin[(p, t, n, f)].solution_value()       # usar solution_value()
+                ti = self.tiempo_inicio[(p, t, n, f)].solution_value()
+                tf = self.tiempo_fin[(p, t, n, f)].solution_value()
                 tiempo_entrega = self.tiempos[cliente][f]['tiempo_entrega']
                 tiempo_total = self.tiempos[cliente][f]['tiempo_total']
                 
@@ -443,9 +427,6 @@ class TruckSchedulingModel:
         return True
 
     def visualizar_resultados(self):
-        """
-        Genera visualizaciones de los resultados usando Plotly y devuelve las figuras para Streamlit
-        """
         if self.schedule is None or self.schedule.empty:
             print("No hay resultados para visualizar")
             return []
@@ -526,3 +507,4 @@ class TruckSchedulingModel:
     
         figures = [fig_gantt]
         return figures
+
