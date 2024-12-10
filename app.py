@@ -54,7 +54,7 @@ st.sidebar.header("Parámetros para Generar Pedidos")
 # Menú desplegable de números del 5 al 50
 valor_seleccionado = st.sidebar.selectbox(
     "Seleccionar un número entero (5-50)",
-    options=list(range(5, 51)),
+    options=list(range(5, 101)),
     index=0
 )
 
