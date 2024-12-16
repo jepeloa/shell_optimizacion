@@ -155,7 +155,7 @@ class TruckSchedulingModel:
                 print(f"No quedaron pedidos sin asignar luego de la pasada {pass_num - 1}.")
                 break
 
-            num_iteraciones = n_pedidos * 1000
+            num_iteraciones = n_pedidos * 100
             print(f"Iniciando pasada {pass_num} con {n_pedidos} pedidos y {num_iteraciones} iteraciones...")
 
             solution = self._resolver_montecarlo(pedidos_restantes.to_dict('records'), num_iteraciones=num_iteraciones)
